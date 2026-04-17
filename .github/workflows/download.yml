@@ -1,0 +1,26 @@
+name: Telegram Downloader
+on:
+  workflow_dispatch:
+    inputs:
+      channel_name:
+        description: 'Enter Telegram Channel Name (e.g., nasa)'
+        required: true
+        default: 'nasa'
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install yt-dlp
+        run: pip install yt-dlp
+
+      - name: Get Links and Download
+        run: |
+          links=$(curl -s "https://t.me/s/${{ github.event.inputs.channel_name }}" | grep -oP 'https://t.me/${{ github.event.inputs.channel_name }}/\d+' | sort -u)
+          yt-dlp $links
+
+      - name: Upload Files
+        uses: actions/upload-artifact@v4
+        with:
+          name: downloaded-media
+          path: .
