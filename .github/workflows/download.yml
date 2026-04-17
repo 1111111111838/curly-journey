@@ -1,4 +1,4 @@
-name: Telegram Downloader
+name: Telegram Advanced Downloader
 on:
   workflow_dispatch:
     inputs:
@@ -11,35 +11,60 @@ jobs:
   download:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
       - name: Install Tools
         run: |
-          sudo pip install yt-dlp
-          sudo apt-get install -y curl grep
+          pip install yt-dlp playwright
+          playwright install chromium
 
-      - name: Scrape and Download
+      - name: Scrape with Browser
         run: |
-          CH="${{ github.event.inputs.channel_name }}"
-          
-          # הורדת הדף עם התחזות מלאה לדפדפן
-          curl -sL -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36" \
-          "https://t.me/s/$CH" > content.html
+          python - <<EOF
+          import asyncio
+          from playwright.async_api import async_playwright
+          import re
 
-          # חילוץ קישורים - שיטה גמישה יותר
-          grep -oP "t.me/$CH/\d+" content.html | sed 's|^|https://|' | sort -u > links.txt
+          async def run():
+              async with async_playwright() as p:
+                  browser = await p.chromium.launch()
+                  page = await browser.new_page()
+                  # פתיחת הדף הציבורי של הערוץ
+                  channel = "${{ github.event.inputs.channel_name }}"
+                  await page.goto(f"https://t.me/s/{channel}", wait_until="networkidle")
+                  
+                  # חילוץ תוכן הדף
+                  content = await page.content()
+                  links = list(set(re.findall(rf'https://t.me/{channel}/\d+', content)))
+                  
+                  with open("links.txt", "w") as f:
+                      for link in links:
+                          f.write(link + "\n")
+                  
+                  print(f"Found {len(links)} links.")
+                  await browser.close()
 
-          # בדיקה אם נמצא משהו
-          if [ ! -s links.txt ]; then
-            echo "--- שגיאה: לא נמצאו קישורים ---"
-            echo "טלגרם חסמה את הגישה מהשרת של GitHub לערוץ זה."
-            echo "נסה ערוץ אחר כדי לבדוק אם המערכת עובדת."
+          asyncio.run(run())
+          EOF
+
+      - name: Download Media
+        run: |
+          if [ -s links.txt ]; then
+            yt-dlp -a links.txt --no-check-certificate --ignore-errors
+          else
+            echo "עדיין לא נמצאו קישורים. ייתכן והערוץ חסום לגמרי לצפייה ללא התחברות."
             exit 1
           fi
-
-          echo "נמצאו קישורים! מוריד..."
-          yt-dlp -a links.txt --no-check-certificate --ignore-errors
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: telegram-media
+          name: telegram-files
           path: .
+          # מעלה רק קבצי מדיה כדי לחסוך מקום
