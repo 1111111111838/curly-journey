@@ -1,70 +1,59 @@
-name: Telegram Advanced Downloader
+name: Telegram Proxy Downloader
 on:
   workflow_dispatch:
     inputs:
       channel_name:
-        description: 'שם הערוץ'
+        description: 'הכנס את שם הערוץ (למשל flmak1)'
         required: true
         default: 'flmak1'
 
 jobs:
-  download:
+  download_job:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
+      - name: Install yt-dlp
+        run: sudo pip install yt-dlp
 
-      - name: Install Tools
+      - name: Scrape via Google Proxy
         run: |
-          pip install yt-dlp playwright
-          playwright install chromium
+          CH="${{ github.event.inputs.channel_name }}"
+          echo "מתחבר לערוץ $CH דרך שרת מתווך..."
+          
+          # שימוש בשרת הפרוקסי של גוגל כדי להסתיר את הזהות של GitHub
+          PROXY_URL="https://images1-focus-opensocial.googleusercontent.com/gadgets/proxy?container=focus&url=https://t.me/s/$CH"
+          
+          curl -sL -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" "$PROXY_URL" > content.html
+          
+          # חילוץ הקישורים מהדף שהתקבל
+          grep -oP "t.me/$CH/\d+" content.html | sed 's|^|https://|' | sort -u > links.txt
+          
+          # הצגת הקישורים שנמצאו ביומן (לצורך בקרה)
+          echo "קישורים שנמצאו:"
+          cat links.txt
 
-      - name: Scrape with Browser
-        run: |
-          python - <<EOF
-          import asyncio
-          from playwright.async_api import async_playwright
-          import re
-
-          async def run():
-              async with async_playwright() as p:
-                  browser = await p.chromium.launch()
-                  page = await browser.new_page()
-                  # פתיחת הדף הציבורי של הערוץ
-                  channel = "${{ github.event.inputs.channel_name }}"
-                  await page.goto(f"https://t.me/s/{channel}", wait_until="networkidle")
-                  
-                  # חילוץ תוכן הדף
-                  content = await page.content()
-                  links = list(set(re.findall(rf'https://t.me/{channel}/\d+', content)))
-                  
-                  with open("links.txt", "w") as f:
-                      for link in links:
-                          f.write(link + "\n")
-                  
-                  print(f"Found {len(links)} links.")
-                  await browser.close()
-
-          asyncio.run(run())
-          EOF
-
-      - name: Download Media
+      - name: Execute Download
         run: |
           if [ -s links.txt ]; then
-            yt-dlp -a links.txt --no-check-certificate --ignore-errors
+            echo "מתחיל הורדה של המדיה..."
+            # הורדה עם הגדרות גמישות למניעת שגיאות
+            yt-dlp -a links.txt --no-check-certificate --ignore-errors --output "%(title)s.%(ext)s"
           else
-            echo "עדיין לא נמצאו קישורים. ייתכן והערוץ חסום לגמרי לצפייה ללא התחברות."
+            echo "שגיאה: לא נמצאו קישורים להורדה. ייתכן והערוץ חסום לחלוטין לצפייה חיצונית."
             exit 1
           fi
 
-      - name: Upload
+      - name: Upload Files to GitHub
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: telegram-files
-          path: .
-          # מעלה רק קבצי מדיה כדי לחסוך מקום
+          name: telegram-downloaded-media
+          path: |
+            *.mp4
+            *.mkv
+            *.mp3
+            *.jpg
+            *.png
+            *.webp
