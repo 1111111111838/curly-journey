@@ -1,4 +1,4 @@
-name: Telegram Final Attempt
+name: Telegram Brute Force
 on:
   workflow_dispatch:
     inputs:
@@ -6,6 +6,14 @@ on:
         description: 'שם הערוץ'
         required: true
         default: 'flmak1'
+      start_id:
+        description: 'מאיזה מספר פוסט להתחיל?'
+        required: true
+        default: '1'
+      end_id:
+        description: 'עד איזה מספר פוסט?'
+        required: true
+        default: '20'
 
 jobs:
   download:
@@ -14,41 +22,24 @@ jobs:
       - name: Install yt-dlp
         run: sudo pip install yt-dlp
 
-      - name: Attempt Embed Scrape
+      - name: Forced Download
         run: |
           CH="${{ github.event.inputs.channel_name }}"
+          START=${{ github.event.inputs.start_id }}
+          END=${{ github.event.inputs.end_id }}
           
-          # ניסיון לשלוף קישורים דרך דף ה-widget (לעיתים פחות חסום)
-          curl -sL "https://t.me/s/$CH" -H "User-Agent: Mozilla/5.0" > raw.html
+          echo "מנסה להוריד פוסטים מ-$START עד $END בערוץ $CH..."
           
-          # אם הדף ריק, ננסה לבנות קישורים "בכוח" לפי מספרים רצים
-          # כאן אנחנו מנחשים את הפוסטים האחרונים (למשל 100 הפוסטים האחרונים)
-          # זו שיטה שעוקפת את הצורך בסריקה של הדף
-          
-          echo "מנסה להוריד את 20 הפוסטים האחרונים בערוץ באופן עיוור..."
-          
-          # ניסיון להוריד ישירות בלי לסרוק, פשוט לפי מבנה הקישור
-          # נניח שאנחנו מנסים להוריד פוסטים ממספר גבוה כלשהו אחורה
-          for i in {1..20}; do
-             # פקודה שמנסה לנחש קישור ולהוריד אותו
-             # נשתמש ב-yt-dlp ישירות על מבנה הקישור הצפוי
-             echo "בדיקת פוסט מספר $i..."
-             # הערה: השיטה הזו עובדת רק אם נדע בערך מה מספרי הפוסטים
+          # יצירת רשימת כתובות באופן ידני בלי לסרוק את טלגרם
+          for ((i=$START; i<=$END; i++)); do
+            echo "https://t.me/$CH/$i" >> brute_links.txt
           done
-          
-          # נחזור לשיטה המקורית עם "תיקון" קטן ב-grep
-          grep -oP "https://t.me/$CH/\d+" raw.html | sort -u > links.txt
-          
-          if [ -s links.txt ]; then
-            yt-dlp -a links.txt --ignore-errors
-          else
-            echo "גם שיטת ה-Embed נכשלה."
-            exit 1
-          fi
 
-      - name: Upload
-        if: success()
+          # הפעלת ההורדה עם התעלמות משגיאות (כי חלק מהמספרים יהיו ריקים)
+          yt-dlp -a brute_links.txt --ignore-errors --no-warnings --user-agent "Mozilla/5.0"
+          
+      - name: Check and Upload
         uses: actions/upload-artifact@v4
         with:
-          name: media
+          name: telegram-files
           path: .
