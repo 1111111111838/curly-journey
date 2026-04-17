@@ -1,26 +1,40 @@
-name: Telegram Downloader
-on:
-  workflow_dispatch:
-    inputs:
-      channel_name:
-        description: 'Enter Telegram Channel Name (e.g., nasa)'
-        required: true
-        default: 'nasa'
+import requests
+import sys
+import re
 
-jobs:
-  download:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Install yt-dlp
-        run: pip install yt-dlp
+def search_telegram_simple(query):
+    # שלב 1: מציאת ערוצים דרך Lyzem (זה השלב שעובד לך!)
+    search_url = f"https://lyzem.com/search?q={query}"
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    
+    try:
+        print(f"--- Searching for: {query} ---")
+        resp = requests.get(search_url, headers=headers, timeout=15)
+        # מוצא שמות ערוצים
+        channels = list(set(re.findall(r't\.me\/([\w\d\-_]+)', resp.text)))
+        
+        final_links = []
+        for ch in channels:
+            # מסנן זבל
+            if ch in ['s', 'lyzem', 'bot', 'joinchat', 'search', 'api']: continue
+            
+            # יוצר קישור בפורמט שה-downloader שלך יבין הכי טוב
+            # אנחנו מוסיפים את ה-s/ כדי שזה יהיה ציבורי
+            final_links.append(f"https://t.me/s/{ch}")
+            
+        return final_links
+    except Exception as e:
+        print(f"Error: {e}")
+        return []
 
-      - name: Get Links and Download
-        run: |
-          links=$(curl -s "https://t.me/s/${{ github.event.inputs.channel_name }}" | grep -oP 'https://t.me/${{ github.event.inputs.channel_name }}/\d+' | sort -u)
-          yt-dlp $links
-
-      - name: Upload Files
-        uses: actions/upload-artifact@v4
-        with:
-          name: downloaded-media
-          path: .
+if __name__ == "__main__":
+    # מקבל את מילת החיפוש או משתמש בברירת מחדל
+    search_term = sys.argv[1] if len(sys.argv) > 1 else "nature"
+    results = search_telegram_simple(search_term)
+    
+    if results:
+        print(f"\nFound {len(results)} potential channels. Copy one of these to your downloader:")
+        for i, link in enumerate(results[:15], 1):
+            print(f"{i}. {link}")
+    else:
+        print("\nNo channels found. Try a different word.")
