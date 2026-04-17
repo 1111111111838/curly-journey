@@ -1,40 +1,50 @@
-import requests
-import sys
-import re
+name: Telegram Downloader
+on:
+  workflow_dispatch:
+    inputs:
+      channel_name:
+        description: 'שם הערוץ (למשל flmak1)'
+        required: true
+        default: 'flmak1'
 
-def search_telegram_simple(query):
-    # שלב 1: מציאת ערוצים דרך Lyzem (זה השלב שעובד לך!)
-    search_url = f"https://lyzem.com/search?q={query}"
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    
-    try:
-        print(f"--- Searching for: {query} ---")
-        resp = requests.get(search_url, headers=headers, timeout=15)
-        # מוצא שמות ערוצים
-        channels = list(set(re.findall(r't\.me\/([\w\d\-_]+)', resp.text)))
-        
-        final_links = []
-        for ch in channels:
-            # מסנן זבל
-            if ch in ['s', 'lyzem', 'bot', 'joinchat', 'search', 'api']: continue
-            
-            # יוצר קישור בפורמט שה-downloader שלך יבין הכי טוב
-            # אנחנו מוסיפים את ה-s/ כדי שזה יהיה ציבורי
-            final_links.append(f"https://t.me/s/{ch}")
-            
-        return final_links
-    except Exception as e:
-        print(f"Error: {e}")
-        return []
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install yt-dlp
+        run: sudo pip install yt-dlp
 
-if __name__ == "__main__":
-    # מקבל את מילת החיפוש או משתמש בברירת מחדל
-    search_term = sys.argv[1] if len(sys.argv) > 1 else "nature"
-    results = search_telegram_simple(search_term)
-    
-    if results:
-        print(f"\nFound {len(results)} potential channels. Copy one of these to your downloader:")
-        for i, link in enumerate(results[:15], 1):
-            print(f"{i}. {link}")
-    else:
-        print("\nNo channels found. Try a different word.")
+      - name: Extract and Download
+        run: |
+          # שליפת הדף וחיפוש כל קישור שכולל את שם הערוץ ומספר פוסט
+          # הוספנו תמיכה בפורמטים שונים של קישורים שטלגרם מייצרת
+          CH_NAME="${{ github.event.inputs.channel_name }}"
+          curl -s "https://t.me/s/$CH_NAME" > page.html
+          
+          # חיפוש קישורים בתוך קוד המקור של הדף
+          grep -oP "https://t.me/$CH_NAME/\d+" page.html | sort -u > links.txt
+          
+          # בדיקה אם הקובץ ריק
+          if [ ! -s links.txt ]; then
+            echo "לא נמצאו קישורים ישירים. מנסה שיטה חלופית..."
+            grep -oP "t.me/$CH_NAME/\d+" page.html | sed 's|^|https://|' | sort -u > links.txt
+          fi
+
+          if [ ! -s links.txt ]; then
+            echo "שגיאה: הערוץ חסום לצפייה חיצונית או שאין בו פוסטים ציבוריים."
+            exit 1
+          fi
+
+          echo "נמצאו קישורים! מתחיל הורדה..."
+          cat links.txt
+          yt-dlp -a links.txt --no-check-certificate --ignore-errors
+
+      - name: Upload Files
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-files
+          path: |
+            ./*
+            !./page.html
+            !./links.txt
