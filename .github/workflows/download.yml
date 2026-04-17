@@ -16,28 +16,29 @@ jobs:
 
       - name: Extract and Download
         run: |
-          # שליפת הדף וחיפוש כל קישור שכולל את שם הערוץ ומספר פוסט
-          # הוספנו תמיכה בפורמטים שונים של קישורים שטלגרם מייצרת
           CH_NAME="${{ github.event.inputs.channel_name }}"
-          curl -s "https://t.me/s/$CH_NAME" > page.html
           
-          # חיפוש קישורים בתוך קוד המקור של הדף
+          # שימוש ב-User-Agent כדי להיראות כמו דפדפן כרום רגיל
+          USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          
+          echo "סורק את הערוץ $CH_NAME..."
+          
+          # שליפת הדף עם התחזות לדפדפן
+          curl -s -L -H "User-Agent: $USER_AGENT" "https://t.me/s/$CH_NAME" > page.html
+          
+          # חילוץ הקישורים
           grep -oP "https://t.me/$CH_NAME/\d+" page.html | sort -u > links.txt
           
-          # בדיקה אם הקובץ ריק
+          # בדיקה אם נמצאו קישורים
           if [ ! -s links.txt ]; then
-            echo "לא נמצאו קישורים ישירים. מנסה שיטה חלופית..."
-            grep -oP "t.me/$CH_NAME/\d+" page.html | sed 's|^|https://|' | sort -u > links.txt
-          fi
-
-          if [ ! -s links.txt ]; then
-            echo "שגיאה: הערוץ חסום לצפייה חיצונית או שאין בו פוסטים ציבוריים."
+            echo "שגיאה: טלגרם חסמה את הסריקה או שהערוץ פרטי."
+            echo "נסה שוב בעוד כמה דקות או עם ערוץ אחר."
             exit 1
           fi
 
           echo "נמצאו קישורים! מתחיל הורדה..."
-          cat links.txt
-          yt-dlp -a links.txt --no-check-certificate --ignore-errors
+          # שימוש ב-yt-dlp עם הגדרות תואמות
+          yt-dlp -a links.txt --user-agent "$USER_AGENT" --no-check-certificate --ignore-errors
 
       - name: Upload Files
         if: success()
