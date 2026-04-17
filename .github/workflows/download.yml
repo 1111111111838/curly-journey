@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       channel_name:
-        description: 'שם הערוץ (למשל flmak1)'
+        description: 'שם הערוץ'
         required: true
         default: 'flmak1'
 
@@ -11,41 +11,35 @@ jobs:
   download:
     runs-on: ubuntu-latest
     steps:
-      - name: Install yt-dlp
-        run: sudo pip install yt-dlp
-
-      - name: Extract and Download
+      - name: Install Tools
         run: |
-          CH_NAME="${{ github.event.inputs.channel_name }}"
+          sudo pip install yt-dlp
+          sudo apt-get install -y curl grep
+
+      - name: Scrape and Download
+        run: |
+          CH="${{ github.event.inputs.channel_name }}"
           
-          # שימוש ב-User-Agent כדי להיראות כמו דפדפן כרום רגיל
-          USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-          
-          echo "סורק את הערוץ $CH_NAME..."
-          
-          # שליפת הדף עם התחזות לדפדפן
-          curl -s -L -H "User-Agent: $USER_AGENT" "https://t.me/s/$CH_NAME" > page.html
-          
-          # חילוץ הקישורים
-          grep -oP "https://t.me/$CH_NAME/\d+" page.html | sort -u > links.txt
-          
-          # בדיקה אם נמצאו קישורים
+          # הורדת הדף עם התחזות מלאה לדפדפן
+          curl -sL -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36" \
+          "https://t.me/s/$CH" > content.html
+
+          # חילוץ קישורים - שיטה גמישה יותר
+          grep -oP "t.me/$CH/\d+" content.html | sed 's|^|https://|' | sort -u > links.txt
+
+          # בדיקה אם נמצא משהו
           if [ ! -s links.txt ]; then
-            echo "שגיאה: טלגרם חסמה את הסריקה או שהערוץ פרטי."
-            echo "נסה שוב בעוד כמה דקות או עם ערוץ אחר."
+            echo "--- שגיאה: לא נמצאו קישורים ---"
+            echo "טלגרם חסמה את הגישה מהשרת של GitHub לערוץ זה."
+            echo "נסה ערוץ אחר כדי לבדוק אם המערכת עובדת."
             exit 1
           fi
 
-          echo "נמצאו קישורים! מתחיל הורדה..."
-          # שימוש ב-yt-dlp עם הגדרות תואמות
-          yt-dlp -a links.txt --user-agent "$USER_AGENT" --no-check-certificate --ignore-errors
+          echo "נמצאו קישורים! מוריד..."
+          yt-dlp -a links.txt --no-check-certificate --ignore-errors
 
-      - name: Upload Files
-        if: success()
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: telegram-files
-          path: |
-            ./*
-            !./page.html
-            !./links.txt
+          name: telegram-media
+          path: .
