@@ -27,7 +27,7 @@ jobs:
       run: |
         pip install requests google-play-scraper
 
-    # 3. יצירת סקריפט חכם שעוקף את חסימות ה-IP של השרתים
+    # 3. יצירת סקריפט ישיר וממוקד ל-APKPure עם מעקף חסימה
     - name: Create Downloader Script
       run: |
         cat << 'EOF' > download_apk.py
@@ -44,34 +44,17 @@ jobs:
                 print(f"Error finding app on Google Play: {e}")
                 sys.exit(1)
 
-            # שימוש ב-API חלופי פתוח לחילוץ ה-APK ישירות מחנות גוגל (לא חוסם את GitHub)
-            download_url = f"https://api.apk.support/v1/download?id={package_id}"
+            # פנייה ישירה לשרת ההורדות
+            final_url = f"https://d.apkpure.com/b/APK/{package_id}?version=latest"
             
+            # כותרות חובה כדי שהשרת יחשוב שאנחנו משתמש אמיתי שמוריד מהאתר שלהם
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://apkpure.com/'
             }
 
-            print(f"Requesting direct APK download link...")
-            response = requests.get(download_url, headers=headers)
-            
-            # אם ה-API החזיר את הקישור הישיר לקובץ
-            if response.status_code == 200 and "url" in response.text:
-                try:
-                    final_url = response.json().get("url")
-                    print("Direct download link obtained. Fetching file...")
-                    apk_response = requests.get(final_url, headers=headers, stream=True)
-                except:
-                    final_url = None
-            else:
-                final_url = None
-
-            # במידה וה-API הישיר לא זמין, נשתמש בשרת המראה החופשי של APK.Support
-            if not final_url:
-                print("Switching to high-compatibility direct mirror...")
-                final_url = f"https://d.apkpure.com/b/APK/{package_id}?version=latest"
-                # הוספת כותרת מיוחדת (Referer) כדי לעקוף את שגיאת ה-403 ב-APKPure
-                headers['Referer'] = 'https://apkpure.com/'
-                apk_response = requests.get(final_url, headers=headers, stream=True)
+            print("Downloading APK via high-compatibility direct mirror...")
+            apk_response = requests.get(final_url, headers=headers, stream=True)
 
             filename = f"{package_id}.apk"
             if apk_response.status_code == 200:
@@ -98,7 +81,7 @@ jobs:
       run: |
         python download_apk.py "${{ github.event.inputs.play_store_url }}"
 
-    # 5. שמירת קובץ ה-APK המוכן בטאב ה-Artifacts של GitHub
+    # 5. שמירת קובץ ה-APK שהורד בהצלחה
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
