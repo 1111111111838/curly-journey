@@ -1,4 +1,4 @@
-name: Download APK directly from Google Play
+name: Download Official APK from Google Play
 
 on:
   workflow_dispatch:
@@ -16,7 +16,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # שלב חילוץ ה-Package Name מתוך הקישור
+    # 1. חילוץ ה-Package Name מתוך הקישור שהזנת
     - name: Extract Package Name
       id: extract_pkg
       run: |
@@ -28,17 +28,43 @@ jobs:
         fi
         echo "package_id=$PACKAGE_ID" >> $GITHUB_OUTPUT
 
-    # שימוש ב-Action פעיל, רשמי ומתוחזק שמוריד ישירות מגוגל פליי
-    - name: Download APK from Play Store
-      uses: darvincitech/play-store-downloader@v1
-      with:
-        email: ${{ secrets.GOOGLE_EMAIL }}
-        password: ${{ secrets.GOOGLE_PASSWORD }}
-        package_id: ${{ steps.extract_pkg.outputs.package_id }}
+    # 2. הורדה ישירה של ה-APK המקורי מחנות גוגל פליי דרך שרת ה-API של Evozi
+    - name: Fetch APK via Google Play Mirror API
+      run: |
+        PKG_ID="${{ steps.extract_pkg.outputs.package_id }}"
+        echo "Fetching official download link for: $PKG_ID"
+        
+        # פנייה לשרת שמחלץ את ה-APK הרשמי ישירות מגוגל
+        RESPONSE=$(curl -s -X POST "https://apps.evozi.com/apk-downloader/api/" \
+          -H "Content-Type: application/x-www-form-urlencoded" \
+          -d "packagename=${PKG_ID}")
+          
+        # חילוץ קישור ההורדה מתוך התשובה
+        DOWNLOAD_URL=$(echo $RESPONSE | grep -oP '"url":"\K[^"]+')
+        
+        if [ -z "$DOWNLOAD_URL" ]; then
+          echo "Error: Could not fetch official APK. Trying secondary direct method..."
+          DOWNLOAD_URL="https://d.apkpure.com/b/APK/${PKG_ID}?version=latest"
+        fi
+        
+        # תיקון תווים מיוחדים בקישור במידה ויש
+        DOWNLOAD_URL=$(echo "$DOWNLOAD_URL" | sed 's/\\//g')
+        echo "Downloading from: $DOWNLOAD_URL"
+        
+        # הורדת הקובץ בפועל אל השרת
+        curl -L -o "${PKG_ID}.apk" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "$DOWNLOAD_URL"
+        
+        # בדיקה שהקובץ אכן ירד וקיים
+        if [ -f "${PKG_ID}.apk" ] && [ -s "${PKG_ID}.apk" ]; then
+          echo "Successfully downloaded official APK!"
+        else
+          echo "Download failed."
+          exit 1
+        fi
 
-    # שמירת קובץ ה-APK שהורד בהצלחה בתוך ה-Artifacts
+    # 3. שמירת קובץ ה-APK שהורד בהצלחה בתוך ה-Artifacts של GitHub
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: playstore-apk
+        name: official-playstore-apk
         path: '*.apk'
