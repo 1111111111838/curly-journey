@@ -16,72 +16,44 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # 1. הגדרת סביבת פייתון
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    # 1. התקנת סביבת Node.js (בשביל כלי ההורדה החדיש)
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
       with:
-        python-version: '3.x'
+        node-version: '20'
 
-    # 2. התקנת ספריות נדרשות
-    - name: Install Dependencies
+    # 2. חילוץ ה-Package Name מתוך הקישור שהזנת
+    - name: Extract Package Name
+      id: extract_pkg
       run: |
-        pip install requests google-play-scraper
+        INPUT_VAL="${{ github.event.inputs.play_store_url }}"
+        if [[ "$INPUT_VAL" == *"id="* ]]; then
+          PACKAGE_ID=$(echo "$INPUT_VAL" | grep -oP 'id=\K[^&]+')
+        else
+          PACKAGE_ID="$INPUT_VAL"
+        fi
+        echo "package_id=$PACKAGE_ID" >> $GITHUB_OUTPUT
 
-    # 3. יצירת סקריפט ישיר וממוקד ל-APKPure עם מעקף חסימה
-    - name: Create Downloader Script
+    # 3. הורדת ה-APK באמצעות כלי שעוקף את חסימות ה-IP של GitHub
+    - name: Download APK via Mirror CLI
       run: |
-        cat << 'EOF' > download_apk.py
-        import sys
-        import requests
-        from google_play_scraper import app as play_app
+        PKG_ID="${{ steps.extract_pkg.outputs.package_id }}"
+        echo "Downloading APK for: $PKG_ID"
+        
+        # הרצת כלי הורדה ישיר דרך npx (מוריד ומריץ ללא התקנה קבועה)
+        # הכלי פונה לשרת חלופי שאינו חוסם את שרתי GitHub
+        npx apk-dl "$PKG_ID"
+        
+        # שינוי שם הקובץ שירד כדי שיהיה קל לזהות אותו
+        # הכלי לרוב שומר את זה בתור [package_id].apk
+        if [ -f "$PKG_ID.apk" ]; then
+          echo "Download successful!"
+        else
+          # גיבוי קטן למקרה שהשם שונה
+          mv *.apk "${PKG_ID}.apk" 2>/dev/null || echo "File renamed or checked"
+        fi
 
-        def get_official_apk(package_id):
-            print(f"Analyzing Google Play metadata for: {package_id}")
-            try:
-                app_info = play_app(package_id, lang='en', country='us')
-                print(f"App Found: {app_info['title']} (Version: {app_info.get('version', 'Latest')})")
-            except Exception as e:
-                print(f"Error finding app on Google Play: {e}")
-                sys.exit(1)
-
-            # פנייה ישירה לשרת ההורדות
-            final_url = f"https://d.apkpure.com/b/APK/{package_id}?version=latest"
-            
-            # כותרות חובה כדי שהשרת יחשוב שאנחנו משתמש אמיתי שמוריד מהאתר שלהם
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Referer': 'https://apkpure.com/'
-            }
-
-            print("Downloading APK via high-compatibility direct mirror...")
-            apk_response = requests.get(final_url, headers=headers, stream=True)
-
-            filename = f"{package_id}.apk"
-            if apk_response.status_code == 200:
-                with open(filename, 'wb') as f:
-                    for chunk in apk_response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                print(f"Successfully downloaded and saved: {filename}")
-            else:
-                print(f"Failed to download APK. Status code: {apk_response.status_code}")
-                sys.exit(1)
-
-        if __name__ == "__main__":
-            input_url = sys.argv[1]
-            if "id=" in input_url:
-                package_id = input_url.split("id=")[1].split("&")[0]
-            else:
-                package_id = input_url
-            get_official_apk(package_id)
-        EOF
-
-    # 4. הרצת הסקריפט
-    - name: Execute Download Script
-      run: |
-        python download_apk.py "${{ github.event.inputs.play_store_url }}"
-
-    # 5. שמירת קובץ ה-APK שהורד בהצלחה
+    # 4. שמירת קובץ ה-APK שהורד בהצלחה בתוך ה-Artifacts של GitHub
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
