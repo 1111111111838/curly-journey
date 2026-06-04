@@ -1,75 +1,68 @@
-name: Telegram Brute Force Pro
+.github/workflows/download-playstore.yml
+name: Download APK from Google Play
+
 on:
   workflow_dispatch:
     inputs:
-      channel_name:
-        description: 'שם הערוץ (למשל flmak1)'
+      play_store_url:
+        description: 'הכנס את הקישור המלא לאפליקציה בגוגל פליי'
         required: true
-        default: 'flmak1'
-      start_id:
-        description: 'מאיזה מספר פוסט להתחיל? (נסה מספרים גבוהים לפוסטים חדשים)'
-        required: true
-        default: '500'
-      end_id:
-        description: 'עד איזה מספר פוסט? (מומלץ טווח של 50 כל פעם)'
-        required: true
-        default: '550'
+        default: 'https://play.google.com/store/apps/details?id=com.example.app'
 
 jobs:
-  download_job:
+  download:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-      - name: Install yt-dlp
-        run: |
-          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
-          sudo chmod a+rx /usr/local/bin/yt-dlp
-          yt-dlp -U
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
 
-      - name: Forced Media Download
-        run: |
-          CH="${{ github.event.inputs.channel_name }}"
-          START=${{ github.event.inputs.start_id }}
-          END=${{ github.event.inputs.end_id }}
-          
-          echo "--- מתחיל ניסיון הורדה ממוקד לערוץ $CH פוסטים $START עד $END ---"
-          
-          # יצירת רשימת הכתובות בפורמט Embed (לפעמים עוקף חסימות טוב יותר)
-          for ((i=$START; i<=$END; i++)); do
-            echo "https://t.me/$CH/$i?embed=1" >> target_links.txt
-          done
+    - name: Install dependencies
+      run: |
+        pip install gpapi
 
-          # הרצת ההורדה
-          # --embed-metadata: שומר מידע נוסף
-          # --merge-output-format: מוודא שהקובץ יהיה וידאו תקין
-          yt-dlp -a target_links.txt \
-            --ignore-errors \
-            --no-warnings \
-            --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-            --output "%(id)s_%(title)s.%(ext)s" \
-            --http-chunk-size 10M \
-            --buffer-size 16K
+    - name: Create Python Script
+      run: |
+        cat << 'EOF' > download_app.py
+        import sys
+        import os
+        from gpapi.googleplay import GooglePlayAPI
 
-      - name: Save Downloaded Files
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: telegram-media-bundle
-          path: |
-            *.mp4
-            *.mkv
-            *.mp3
-            *.jpg
-            *.png
-            *.webp
-          if-no-files-found: warn
-          # הפעלת ההורדה עם התעלמות משגיאות (כי חלק מהמספרים יהיו ריקים)
-          yt-dlp -a brute_links.txt --ignore-errors --no-warnings --user-agent "Mozilla/5.0"
-          
-      - name: Check and Upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: telegram-files
-          path: .
+        def download_apk(package_name):
+            server = GooglePlayAPI(locale="en_US", timezone="UTC")
+            server.login(os.environ['GOOGLE_EMAIL'], os.environ['GOOGLE_PASSWORD'], os.environ['DEVICE_ID'])
+            
+            print(f"Starting download for: {package_name}")
+            doc = server.details(package_name)
+            data = server.download(package_name, doc.versionCode)
+            
+            filename = f"{package_name}.apk"
+            with open(filename, 'wb') as f:
+                for chunk in data:
+                    f.write(chunk)
+            print(f"Saved: {filename}")
+
+        if __name__ == "__main__":
+            url = sys.argv[1]
+            package_name = url.split("id=")[1].split("&")[0]
+            download_apk(package_name)
+        EOF
+
+    - name: Download APK Execution
+      env:
+        GOOGLE_EMAIL: ${{ secrets.GOOGLE_EMAIL }}
+        GOOGLE_PASSWORD: ${{ secrets.GOOGLE_PASSWORD }}
+        DEVICE_ID: ${{ secrets.DEVICE_ID }}
+      run: |
+        python download_app.py "${{ github.event.inputs.play_store_url }}"
+
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: downloaded-apk
+        path: '*.apk'
