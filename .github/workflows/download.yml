@@ -8,7 +8,64 @@ on:
         required: true
         default: 'com.tadiran.mytadiran.prod'
 
+jobs:name: Download APK via GPlayCLI (Secure)
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_name:
+        description: 'הכנס את שם החבילה (או קישור מלא של גוגל פליי)'
+        required: true
+        default: 'com.tadiran.mytadiran.prod'
+
 jobs:
+  download:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # 1. התקנת כלי ה-CLI של הקהילה להורדה ישירה
+    - name: Install GPlayCLI
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gplaycli
+
+    # 2. יצירת קובץ הגדרות מאובטח מתוך ה-Secrets
+    - name: Configure GPlayCLI
+      run: |
+        mkdir -p ~/.config/gplaycli
+        cat << 'EOF' > ~/.config/gplaycli/gplaycli.conf
+        [Credentials]
+        gmail = ${{ secrets.GOOGLE_EMAIL }}
+        password = ${{ secrets.GOOGLE_PASSWORD }}
+        
+        [Cache]
+        token = /tmp/token.txt
+        
+        [Device]
+        device = target
+        EOF
+
+    # 3. חילוץ מזהה האפליקציה והורדה
+    - name: Download APK from Play Store
+      run: |
+        INPUT_VAL="${{ github.event.inputs.package_name }}"
+        if [[ "$INPUT_VAL" == *"id="* ]]; then
+          PACKAGE_ID=$(echo "$INPUT_VAL" | grep -oP 'id=\K[^&]+')
+        else
+          PACKAGE_ID="$INPUT_VAL"
+        fi
+        echo "Downloading: $PACKAGE_ID"
+        gplaycli -d "$PACKAGE_ID"
+
+    # 4. שמירת קובץ ה-APK שהורד בטאב ה-Artifacts
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: playstore-apk
+        path: '*.apk'
   download:
     runs-on: ubuntu-latest
 
