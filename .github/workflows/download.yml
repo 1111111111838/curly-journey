@@ -1,4 +1,4 @@
-name: Download APK - The Final Solution
+name: Download APK via Cloudscraper
 
 on:
   workflow_dispatch:
@@ -16,41 +16,60 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # 1. התקנת הכלי הרשמי של ארגון ה-EFF לעקיפת חסימות והורדת אפליקציות
-    - name: Install apkeep (EFF Official Tool)
-      run: |
-        echo "Downloading apkeep engine..."
-        curl -sL "https://github.com/EFForg/apkeep/releases/latest/download/apkeep-x86_64-unknown-linux-musl" -o apkeep
-        chmod +x apkeep
-        sudo mv apkeep /usr/local/bin/
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
 
-    # 2. הרצת הכלי והורדת האפליקציה ישירות לשרת
-    - name: Download APK
+    # התקנת הספרייה שנועדה לעקוף את חסימות Cloudflare ו-403
+    - name: Install Cloudscraper
       run: |
-        PKG_ID="${{ github.event.inputs.package_name }}"
-        
-        # ניקוי הקישור במידה והכנסת קישור מלא
-        if [[ "$PKG_ID" == *"id="* ]]; then
-          PKG_ID=$(echo "$PKG_ID" | grep -oP 'id=\K[^&]+')
-        fi
-        
-        echo "Bypassing blocks and downloading official APK for: $PKG_ID"
-        
-        # פקודת הקסם שמורידה את הקובץ
-        apkeep -a "$PKG_ID" .
-        
-        # נוודא שהורדנו ונשנה לשם נורמלי
-        if ls *.apk 1> /dev/null 2>&1; then
-          mv *.apk my-tadiran.apk
-          echo "Success! The file is ready."
-        else
-          echo "Download failed!"
-          exit 1
-        fi
+        pip install cloudscraper requests
 
-    # 3. שמירת הקובץ המוכן למשיכה ב-GitHub
-    - name: Upload APK
+    # יצירת סקריפט שמדמה דפדפן אמיתי ועוקף את חסימת ה-IP
+    - name: Bypass Cloudflare and Download APK
+      run: |
+        cat << 'EOF' > download_apk.py
+        import cloudscraper
+        import sys
+        import os
+
+        package_name = sys.argv[1]
+        if "id=" in package_name:
+            package_name = package_name.split("id=")[1].split("&")[0]
+
+        print(f"Bypassing Cloudflare protection for: {package_name}")
+        
+        # הגדרת הסקרייפר להתחזות לדפדפן כרום אמיתי על ווינדוס
+        scraper = cloudscraper.create_scraper(
+            browser={
+                'browser': 'chrome',
+                'platform': 'windows',
+                'desktop': True
+            }
+        )
+        
+        url = f"https://d.apkpure.com/b/APK/{package_name}?version=latest"
+        
+        # ביצוע ההורדה בפועל
+        response = scraper.get(url, stream=True, headers={'Referer': 'https://apkpure.com/'})
+        
+        if response.status_code == 200:
+            with open(f"{package_name}.apk", 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            print("Download completed successfully!")
+        else:
+            print(f"Error: Server returned status {response.status_code}")
+            sys.exit(1)
+        EOF
+        
+        python download_apk.py "${{ github.event.inputs.package_name }}"
+
+    # שמירת הקובץ המוכן בטאב ה-Artifacts
+    - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: tadiran-apk-ready
+        name: my-tadiran-apk
         path: '*.apk'
