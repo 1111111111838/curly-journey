@@ -1,4 +1,3 @@
-.github/workflows/download-playstore.yml
 name: Download APK from Google Play
 
 on:
