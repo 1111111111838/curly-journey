@@ -22,12 +22,12 @@ jobs:
       with:
         python-version: '3.x'
 
-    # 2. התקנת ספריות נדרשות לחילוץ מידע והורדה
+    # 2. התקנת ספריות נדרשות
     - name: Install Dependencies
       run: |
         pip install requests google-play-scraper
 
-    # 3. יצירת סקריפט חכם שמוריד את ה-APK המקורי והרשמי
+    # 3. יצירת סקריפט חכם שעוקף את חסימות ה-IP של השרתים
     - name: Create Downloader Script
       run: |
         cat << 'EOF' > download_apk.py
@@ -38,48 +38,51 @@ jobs:
         def get_official_apk(package_id):
             print(f"Analyzing Google Play metadata for: {package_id}")
             try:
-                # בדיקה שהאפליקציה קיימת וחילוץ מידע רשמי מגוגל פליי
                 app_info = play_app(package_id, lang='en', country='us')
                 print(f"App Found: {app_info['title']} (Version: {app_info.get('version', 'Latest')})")
             except Exception as e:
                 print(f"Error finding app on Google Play: {e}")
                 sys.exit(1)
 
-            # שימוש בשרת ההורדות הרשמי והחופשי של APKCombo המושך ישירות מגוגל
-            download_url = f"https://d.apkcombo.com/b/APK/{package_id}?version=latest"
+            # שימוש ב-API חלופי פתוח לחילוץ ה-APK ישירות מחנות גוגל (לא חוסם את GitHub)
+            download_url = f"https://api.apk.support/v1/download?id={package_id}"
+            
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
 
-            print(f"Downloading original signed APK from mirror...")
-            response = requests.get(download_url, headers=headers, stream=True)
+            print(f"Requesting direct APK download link...")
+            response = requests.get(download_url, headers=headers)
             
-            if response.status_code == 200 or response.status_code == 302:
-                # במידה ויש הפניה (Redirect) נשתמש בקישור הסופי
-                final_url = response.url if response.url else download_url
+            # אם ה-API החזיר את הקישור הישיר לקובץ
+            if response.status_code == 200 and "url" in response.text:
+                try:
+                    final_url = response.json().get("url")
+                    print("Direct download link obtained. Fetching file...")
+                    apk_response = requests.get(final_url, headers=headers, stream=True)
+                except:
+                    final_url = None
+            else:
+                final_url = None
+
+            # במידה וה-API הישיר לא זמין, נשתמש בשרת המראה החופשי של APK.Support
+            if not final_url:
+                print("Switching to high-compatibility direct mirror...")
+                final_url = f"https://d.apkpure.com/b/APK/{package_id}?version=latest"
+                # הוספת כותרת מיוחדת (Referer) כדי לעקוף את שגיאת ה-403 ב-APKPure
+                headers['Referer'] = 'https://apkpure.com/'
                 apk_response = requests.get(final_url, headers=headers, stream=True)
-                
-                filename = f"{package_id}.apk"
+
+            filename = f"{package_id}.apk"
+            if apk_response.status_code == 200:
                 with open(filename, 'wb') as f:
                     for chunk in apk_response.iter_content(chunk_size=8192):
                         if chunk:
                             f.write(chunk)
                 print(f"Successfully downloaded and saved: {filename}")
             else:
-                # פתרון גיבוי מהיר במידה והשרת הראשון עמוס
-                print("Primary mirror busy, trying secondary official fallback...")
-                fallback_url = f"https://d.apkpure.com/b/APK/{package_id}?version=latest"
-                apk_response = requests.get(fallback_url, headers=headers, stream=True)
-                if apk_response.status_code == 200:
-                    filename = f"{package_id}.apk"
-                    with open(filename, 'wb') as f:
-                        for chunk in apk_response.iter_content(chunk_size=8192):
-                            f.write(chunk)
-                    print(f"Successfully downloaded via fallback: {filename}")
-                else:
-                    print(f"Failed to download APK. Status code: {apk_response.status_code}")
-                    sys.exit(1)
+                print(f"Failed to download APK. Status code: {apk_response.status_code}")
+                sys.exit(1)
 
         if __name__ == "__main__":
             input_url = sys.argv[1]
