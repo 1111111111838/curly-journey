@@ -1,12 +1,12 @@
-name: Download Official APK from Play Store
+name: Download APK - The Final Solution
 
 on:
   workflow_dispatch:
     inputs:
-      play_store_url:
-        description: 'הכנס את הקישור המלא לאפליקציה בגוגל פליי'
+      package_name:
+        description: 'הכנס את הקישור או את ה-Package Name'
         required: true
-        default: 'https://play.google.com/store/apps/details?id=com.tadiran.mytadiran.prod'
+        default: 'com.tadiran.mytadiran.prod'
 
 jobs:
   download:
@@ -16,46 +16,41 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # 1. התקנת סביבת Node.js (בשביל כלי ההורדה החדיש)
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-
-    # 2. חילוץ ה-Package Name מתוך הקישור שהזנת
-    - name: Extract Package Name
-      id: extract_pkg
+    # 1. התקנת הכלי הרשמי של ארגון ה-EFF לעקיפת חסימות והורדת אפליקציות
+    - name: Install apkeep (EFF Official Tool)
       run: |
-        INPUT_VAL="${{ github.event.inputs.play_store_url }}"
-        if [[ "$INPUT_VAL" == *"id="* ]]; then
-          PACKAGE_ID=$(echo "$INPUT_VAL" | grep -oP 'id=\K[^&]+')
-        else
-          PACKAGE_ID="$INPUT_VAL"
+        echo "Downloading apkeep engine..."
+        curl -sL "https://github.com/EFForg/apkeep/releases/latest/download/apkeep-x86_64-unknown-linux-musl" -o apkeep
+        chmod +x apkeep
+        sudo mv apkeep /usr/local/bin/
+
+    # 2. הרצת הכלי והורדת האפליקציה ישירות לשרת
+    - name: Download APK
+      run: |
+        PKG_ID="${{ github.event.inputs.package_name }}"
+        
+        # ניקוי הקישור במידה והכנסת קישור מלא
+        if [[ "$PKG_ID" == *"id="* ]]; then
+          PKG_ID=$(echo "$PKG_ID" | grep -oP 'id=\K[^&]+')
         fi
-        echo "package_id=$PACKAGE_ID" >> $GITHUB_OUTPUT
-
-    # 3. הורדת ה-APK באמצעות כלי שעוקף את חסימות ה-IP של GitHub
-    - name: Download APK via Mirror CLI
-      run: |
-        PKG_ID="${{ steps.extract_pkg.outputs.package_id }}"
-        echo "Downloading APK for: $PKG_ID"
         
-        # הרצת כלי הורדה ישיר דרך npx (מוריד ומריץ ללא התקנה קבועה)
-        # הכלי פונה לשרת חלופי שאינו חוסם את שרתי GitHub
-        npx apk-dl "$PKG_ID"
+        echo "Bypassing blocks and downloading official APK for: $PKG_ID"
         
-        # שינוי שם הקובץ שירד כדי שיהיה קל לזהות אותו
-        # הכלי לרוב שומר את זה בתור [package_id].apk
-        if [ -f "$PKG_ID.apk" ]; then
-          echo "Download successful!"
+        # פקודת הקסם שמורידה את הקובץ
+        apkeep -a "$PKG_ID" .
+        
+        # נוודא שהורדנו ונשנה לשם נורמלי
+        if ls *.apk 1> /dev/null 2>&1; then
+          mv *.apk my-tadiran.apk
+          echo "Success! The file is ready."
         else
-          # גיבוי קטן למקרה שהשם שונה
-          mv *.apk "${PKG_ID}.apk" 2>/dev/null || echo "File renamed or checked"
+          echo "Download failed!"
+          exit 1
         fi
 
-    # 4. שמירת קובץ ה-APK שהורד בהצלחה בתוך ה-Artifacts של GitHub
-    - name: Upload APK Artifact
+    # 3. שמירת הקובץ המוכן למשיכה ב-GitHub
+    - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: official-googleplay-apk
+        name: tadiran-apk-ready
         path: '*.apk'
