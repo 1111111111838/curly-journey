@@ -27,14 +27,14 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y gplaycli
 
-    # יצירת קובץ הגדרות עבור הכלי עם הפרטים שלך
+    # יצירת קובץ הגדרות עבור הכלי באמצעות שימוש ב-Secrets מאובטחים
     - name: Configure GPlayCLI
       run: |
         mkdir -p ~/.config/gplaycli
         cat << 'EOF' > ~/.config/gplaycli/gplaycli.conf
         [Credentials]
-        gmail = rafisem.com@gmail.com
-        password = fgqjfmatknjkiqmo
+        gmail = ${{ secrets.GOOGLE_EMAIL }}
+        password = ${{ secrets.GOOGLE_PASSWORD }}
         
         [Cache]
         token = /tmp/token.txt
