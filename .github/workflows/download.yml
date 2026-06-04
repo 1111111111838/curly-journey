@@ -16,7 +16,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # שלב חילוץ ה-Package Name מתוך הקישור שהזנת
+    # שלב חילוץ ה-Package Name מתוך הקישור
     - name: Extract Package Name
       id: extract_pkg
       run: |
@@ -28,15 +28,15 @@ jobs:
         fi
         echo "package_id=$PACKAGE_ID" >> $GITHUB_OUTPUT
 
-    # שימוש ב-Action קהילתי ייעודי, יציב ומאובטח ללא תלות בפייתון או בשרתי טוקנים
+    # שימוש ב-Action פעיל, רשמי ומתוחזק שמוריד ישירות מגוגל פליי
     - name: Download APK from Play Store
-      uses: jb2cube/google-play-downloader-action@v1
+      uses: darvincitech/play-store-downloader@v1
       with:
         email: ${{ secrets.GOOGLE_EMAIL }}
         password: ${{ secrets.GOOGLE_PASSWORD }}
-        packageId: ${{ steps.extract_pkg.outputs.package_id }}
+        package_id: ${{ steps.extract_pkg.outputs.package_id }}
 
-    # שמירת קובץ ה-APK שהורד בהצלחה בתוך ה-Artifacts של הריצה
+    # שמירת קובץ ה-APK שהורד בהצלחה בתוך ה-Artifacts
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
