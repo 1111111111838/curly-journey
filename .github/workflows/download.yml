@@ -6,7 +6,7 @@ on:
       play_store_url:
         description: 'הכנס את הקישור המלא לאפליקציה בגוגל פליי'
         required: true
-        default: 'https://play.google.com/store/apps/details?id=com.tadiran.mytadiran.prod'
+        default: 'https://play.google.com/store/apps/details?id=com.example.app'
 
 jobs:
   download:
@@ -34,10 +34,7 @@ jobs:
 
         def download_apk(package_name):
             server = GooglePlayAPI(locale="en_US", timezone="UTC")
-            
-            # ביצוע רישום אוטומטי (Check-in) ללא צורך ב-Device ID ידני
-            print("Performing automatic check-in...")
-            server.login(os.environ['GOOGLE_EMAIL'], os.environ['GOOGLE_PASSWORD'], None)
+            server.login(os.environ['GOOGLE_EMAIL'], os.environ['GOOGLE_PASSWORD'], os.environ['DEVICE_ID'])
             
             print(f"Starting download for: {package_name}")
             doc = server.details(package_name)
@@ -59,6 +56,7 @@ jobs:
       env:
         GOOGLE_EMAIL: ${{ secrets.GOOGLE_EMAIL }}
         GOOGLE_PASSWORD: ${{ secrets.GOOGLE_PASSWORD }}
+        DEVICE_ID: ${{ secrets.DEVICE_ID }}
         PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: 'python'
       run: |
         python download_app.py "${{ github.event.inputs.play_store_url }}"
