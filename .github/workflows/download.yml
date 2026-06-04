@@ -16,30 +16,29 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # 1. הגדרת סביבת פייתון (דרוש עבור gplaycli דרך pip)
+    # 1. הגדרת סביבת פייתון
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
-    # 2. התקנת הכלי ישירות מתוך פייתון כדי לעקוף את החוסר ב-apt
+    # 2. התקנת הכלי ותאימות פרוטובאף
     - name: Install GPlayCLI
       run: |
         pip install gplaycli
-        # פתרון לבעיית ה-Protobuf שהייתה לנו קודם
         pip install "protobuf<=3.20.3"
 
-    # 3. יצירת קובץ הגדרות מאובטח מתוך ה-Secrets
+    # 3. יצירת קובץ הגדרות בתיקיית העבודה הנוכחית + ביטול שרת הטוקנים החיצוני
     - name: Configure GPlayCLI
       run: |
-        mkdir -p ~/.config/gplaycli
-        cat << 'EOF' > ~/.config/gplaycli/gplaycli.conf
+        cat << 'EOF' > gplaycli.conf
         [Credentials]
         gmail = ${{ secrets.GOOGLE_EMAIL }}
         password = ${{ secrets.GOOGLE_PASSWORD }}
+        token_dispenser_url = ""
         
         [Cache]
-        token = /tmp/token.txt
+        token = token.cache
         
         [Device]
         device = target
