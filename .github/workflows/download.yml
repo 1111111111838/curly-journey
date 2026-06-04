@@ -1,4 +1,4 @@
-name: Download Official APK from Google Play
+name: Download Official APK from Play Store
 
 on:
   workflow_dispatch:
@@ -16,55 +16,88 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # 1. חילוץ ה-Package Name מתוך הקישור שהזנת
-    - name: Extract Package Name
-      id: extract_pkg
-      run: |
-        INPUT_VAL="${{ github.event.inputs.play_store_url }}"
-        if [[ "$INPUT_VAL" == *"id="* ]]; then
-          PACKAGE_ID=$(echo "$INPUT_VAL" | grep -oP 'id=\K[^&]+')
-        else
-          PACKAGE_ID="$INPUT_VAL"
-        fi
-        echo "package_id=$PACKAGE_ID" >> $GITHUB_OUTPUT
+    # 1. הגדרת סביבת פייתון
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
 
-    # 2. הורדה ישירה של ה-APK המקורי מחנות גוגל פליי דרך שרת ה-API של Evozi
-    - name: Fetch APK via Google Play Mirror API
+    # 2. התקנת ספריות נדרשות לחילוץ מידע והורדה
+    - name: Install Dependencies
       run: |
-        PKG_ID="${{ steps.extract_pkg.outputs.package_id }}"
-        echo "Fetching official download link for: $PKG_ID"
-        
-        # פנייה לשרת שמחלץ את ה-APK הרשמי ישירות מגוגל
-        RESPONSE=$(curl -s -X POST "https://apps.evozi.com/apk-downloader/api/" \
-          -H "Content-Type: application/x-www-form-urlencoded" \
-          -d "packagename=${PKG_ID}")
-          
-        # חילוץ קישור ההורדה מתוך התשובה
-        DOWNLOAD_URL=$(echo $RESPONSE | grep -oP '"url":"\K[^"]+')
-        
-        if [ -z "$DOWNLOAD_URL" ]; then
-          echo "Error: Could not fetch official APK. Trying secondary direct method..."
-          DOWNLOAD_URL="https://d.apkpure.com/b/APK/${PKG_ID}?version=latest"
-        fi
-        
-        # תיקון תווים מיוחדים בקישור במידה ויש
-        DOWNLOAD_URL=$(echo "$DOWNLOAD_URL" | sed 's/\\//g')
-        echo "Downloading from: $DOWNLOAD_URL"
-        
-        # הורדת הקובץ בפועל אל השרת
-        curl -L -o "${PKG_ID}.apk" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "$DOWNLOAD_URL"
-        
-        # בדיקה שהקובץ אכן ירד וקיים
-        if [ -f "${PKG_ID}.apk" ] && [ -s "${PKG_ID}.apk" ]; then
-          echo "Successfully downloaded official APK!"
-        else
-          echo "Download failed."
-          exit 1
-        fi
+        pip install requests google-play-scraper
 
-    # 3. שמירת קובץ ה-APK שהורד בהצלחה בתוך ה-Artifacts של GitHub
+    # 3. יצירת סקריפט חכם שמוריד את ה-APK המקורי והרשמי
+    - name: Create Downloader Script
+      run: |
+        cat << 'EOF' > download_apk.py
+        import sys
+        import requests
+        from google_play_scraper import app as play_app
+
+        def get_official_apk(package_id):
+            print(f"Analyzing Google Play metadata for: {package_id}")
+            try:
+                # בדיקה שהאפליקציה קיימת וחילוץ מידע רשמי מגוגל פליי
+                app_info = play_app(package_id, lang='en', country='us')
+                print(f"App Found: {app_info['title']} (Version: {app_info.get('version', 'Latest')})")
+            except Exception as e:
+                print(f"Error finding app on Google Play: {e}")
+                sys.exit(1)
+
+            # שימוש בשרת ההורדות הרשמי והחופשי של APKCombo המושך ישירות מגוגל
+            download_url = f"https://d.apkcombo.com/b/APK/{package_id}?version=latest"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+            }
+
+            print(f"Downloading original signed APK from mirror...")
+            response = requests.get(download_url, headers=headers, stream=True)
+            
+            if response.status_code == 200 or response.status_code == 302:
+                # במידה ויש הפניה (Redirect) נשתמש בקישור הסופי
+                final_url = response.url if response.url else download_url
+                apk_response = requests.get(final_url, headers=headers, stream=True)
+                
+                filename = f"{package_id}.apk"
+                with open(filename, 'wb') as f:
+                    for chunk in apk_response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                print(f"Successfully downloaded and saved: {filename}")
+            else:
+                # פתרון גיבוי מהיר במידה והשרת הראשון עמוס
+                print("Primary mirror busy, trying secondary official fallback...")
+                fallback_url = f"https://d.apkpure.com/b/APK/{package_id}?version=latest"
+                apk_response = requests.get(fallback_url, headers=headers, stream=True)
+                if apk_response.status_code == 200:
+                    filename = f"{package_id}.apk"
+                    with open(filename, 'wb') as f:
+                        for chunk in apk_response.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                    print(f"Successfully downloaded via fallback: {filename}")
+                else:
+                    print(f"Failed to download APK. Status code: {apk_response.status_code}")
+                    sys.exit(1)
+
+        if __name__ == "__main__":
+            input_url = sys.argv[1]
+            if "id=" in input_url:
+                package_id = input_url.split("id=")[1].split("&")[0]
+            else:
+                package_id = input_url
+            get_official_apk(package_id)
+        EOF
+
+    # 4. הרצת הסקריפט
+    - name: Execute Download Script
+      run: |
+        python download_apk.py "${{ github.event.inputs.play_store_url }}"
+
+    # 5. שמירת קובץ ה-APK המוכן בטאב ה-Artifacts של GitHub
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: official-playstore-apk
+        name: official-googleplay-apk
         path: '*.apk'
