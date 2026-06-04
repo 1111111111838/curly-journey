@@ -16,11 +16,20 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    # 1. הגדרת סביבת פייתון (דרוש עבור gplaycli דרך pip)
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    # 2. התקנת הכלי ישירות מתוך פייתון כדי לעקוף את החוסר ב-apt
     - name: Install GPlayCLI
       run: |
-        sudo apt-get update
-        sudo apt-get install -y gplaycli
+        pip install gplaycli
+        # פתרון לבעיית ה-Protobuf שהייתה לנו קודם
+        pip install "protobuf<=3.20.3"
 
+    # 3. יצירת קובץ הגדרות מאובטח מתוך ה-Secrets
     - name: Configure GPlayCLI
       run: |
         mkdir -p ~/.config/gplaycli
@@ -36,6 +45,7 @@ jobs:
         device = target
         EOF
 
+    # 4. חילוץ מזהה האפליקציה והורדה
     - name: Download APK from Play Store
       run: |
         INPUT_VAL="${{ github.event.inputs.package_name }}"
@@ -47,6 +57,7 @@ jobs:
         echo "Downloading package: $PACKAGE_ID"
         gplaycli -d "$PACKAGE_ID"
 
+    # 5. שמירת קובץ ה-APK שהורד בטאב ה-Artifacts
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
