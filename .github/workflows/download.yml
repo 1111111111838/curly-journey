@@ -1,28 +1,84 @@
-name: Download Single Tadiran APK
+name: Download APK - Mac Stealth Mode
 
 on:
   workflow_dispatch:
+    inputs:
+      package_name:
+        description: 'הכנס את הקישור או את ה-Package Name'
+        required: true
+        default: 'com.tadiran.mytadiran.prod'
 
 jobs:
   download:
-    runs-on: ubuntu-latest
+    # כאן טמון הקסם! אנחנו משתמשים בשרת Mac נקי שלא נמצא ברשימות השחורות
+    runs-on: macos-latest
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # הורדה של קובץ APK בודד, שלם ונקי
-    - name: Download Clean APK
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install Cloudscraper
       run: |
-        echo "Downloading single unified APK..."
+        pip3 install cloudscraper requests
+
+    - name: Download APK via Stealth Mac
+      run: |
+        cat << 'EOF' > download_apk.py
+        import cloudscraper
+        import sys
+
+        package_name = sys.argv[1]
+        if "id=" in package_name:
+            package_name = package_name.split("id=")[1].split("&")[0]
+
+        print(f"Connecting from fresh Mac IP for: {package_name}")
         
-        # שימוש בשרת חילוץ ישיר שמביא קובץ APK אחד בלבד (בנפח של כ-60MB)
-        curl -L -o "Tadiran_Official.apk" \
-          -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-          "https://d.apkpure.com/b/APK/com.tadiran.mytadiran.prod?version=latest"
+        # מתחזים לדפדפן ספארי על מק כדי להשלים את התחפושת
+        scraper = cloudscraper.create_scraper(
+            browser={
+                'browser': 'chrome',
+                'platform': 'darwin',
+                'desktop': True
+            }
+        )
+        
+        url = f"https://d.apkpure.com/b/APK/{package_name}?version=latest"
+        
+        # מבצעים את ההורדה
+        response = scraper.get(url, stream=True, headers={'Referer': 'https://apkpure.com/'})
+        
+        if response.status_code == 200:
+            with open(f"{package_name}.apk", 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            print("Download completed successfully on the first try!")
+        else:
+            print(f"Main server returned {response.status_code}. Switching to backup mirror...")
+            # גיבוי שקט למקרה שהשרת הראשון נופל
+            fallback_url = f"https://apkcombo.com/b/apk/{package_name}?version=latest"
+            fallback_resp = scraper.get(fallback_url, stream=True, headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'})
+            
+            if fallback_resp.status_code == 200:
+                with open(f"{package_name}.apk", 'wb') as f:
+                    for chunk in fallback_resp.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                print("Download completed successfully via backup mirror!")
+            else:
+                print("Both mirrors blocked. Exiting.")
+                sys.exit(1)
+        EOF
+        
+        python3 download_apk.py "${{ github.event.inputs.package_name }}"
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: tadiran-perfect-apk
-        path: Tadiran_Official.apk
+        name: my-tadiran-apk
+        path: '*.apk'
